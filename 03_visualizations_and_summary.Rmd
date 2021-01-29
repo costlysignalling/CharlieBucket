@@ -1,0 +1,1005 @@
+---
+title: "05_visual_Fixed_effects_month"
+author: "Petr Tureček"
+date: "24 11 2020"
+output: word_document
+---
+
+```{r, echo=F, include=F}
+
+#Load libraries and model samples
+
+library(splines)
+library(rethinking)
+
+load("01_res_GMCmonth3.RData")
+load("data_spread_month.RData")
+MA<-standardize(data$mother.age)
+cfMA<-mean(MA,na.rm=T)
+cfBR<-median(data$rank)
+
+precis(m,depth=2)
+
+post<-extract.samples(m)
+
+```
+
+We conducted a multivariate Bayesian survival analysis using the rethinking package (McElreath, 2020), that employs MCMC sampling through the Stan infrastructure. Life of each child in the dataset was divided into months for which predictors of interest were evaluated (because some of them, like grandmother availability, changed during the analyzed time frame). We did not use finer time resolution (days or weeks) because of low computation efficiency of such an approach. Still, a comparative analysis on a subsample of 200 children revealed, that all these resolutions allow extracting identical conclusions. If grandmother availability changed (e.g. when grandmother died) during a single month, the data point was assigned with a prevailing factor level for the given time frame.
+
+Survival function was defined by an independent intercept for each SES category and five common cubic B-splines centered around a pivot knot at the first year of age because the most changes in survival rates were expected to happen during the first year of life. You can see the basis functions, posterior spline estimation using five weights parameters and the resulting function in Supplementary material XX.
+
+```{r, echo=F, fig.cap = "Figure x. Cubic spline basis functions employed to model baseline survival probability during the first five years of life",fig.width=8,fig.height=4}
+time<-1:60
+
+num_knots <- 3
+knot_list <- quantile( time , probs=c(0,0.2,1) )
+Bt <- bs(time,
+         knots=knot_list[-c(1,num_knots)] ,
+         degree=3 , intercept=T )
+
+par(mar=c(3.5,3.5,2,8),mgp=c(2,0.7,0))
+plot( time, Bt[,1],col=2,type="l",ylab="Basis function value",xlab="Time (years)",xaxt="n")
+axis(1,at=0:5*12,labels = 0:5)
+lines(time, Bt[,2] ,col=3)
+lines(time, Bt[,3] ,col=4)
+lines(time, Bt[,4] ,col=5)
+lines(time, Bt[,5] ,col=6)
+legend("topright",inset=c(-0.25,0),legend = paste("spline",1:5),col=2:6,lwd=2,xpd=T,bty="n")
+
+ns<-dim(post$alpha)[1]
+```
+
+
+```{r, echo=F, fig.cap = "Figure x. Posterior estimate the product of B-spline weights and respective basis functions",fig.width=8,fig.height=4}
+pr1<-0.95
+
+Bs1<-sapply(1:ns,function(i){post$w1[i]*Bt[,1]})
+mu1<-apply(Bs1,1,median)
+CI1<-apply(Bs1,1,PI,prob=pr1)
+
+Bs2<-sapply(1:ns,function(i){post$w2[i]*Bt[,2]})
+mu2<-apply(Bs2,1,median)
+CI2<-apply(Bs2,1,PI,prob=pr1)
+
+Bs3<-sapply(1:ns,function(i){post$w3[i]*Bt[,3]})
+mu3<-apply(Bs3,1,median)
+CI3<-apply(Bs3,1,PI,prob=pr1)
+
+Bs4<-sapply(1:ns,function(i){post$w4[i]*Bt[,4]})
+mu4<-apply(Bs4,1,median)
+CI4<-apply(Bs4,1,PI,prob=pr1)
+
+Bs5<-sapply(1:ns,function(i){post$w5[i]*Bt[,5]})
+mu5<-apply(Bs5,1,median)
+CI5<-apply(Bs5,1,PI,prob=pr1)
+
+
+par(mar=c(3.5,3.5,2,8),mgp=c(2,0.7,0))
+plot( time, Bt[,1],col=2,type="n",ylab="Basis × posterior weight",xlab="Time (years)",xaxt="n",ylim=c(-2,3))
+axis(1,at=0:5*12,labels = 0:5)
+
+shade(CI1,time,col=col.alpha(2,0.2))
+lines(time, mu1 ,col=2)
+shade(CI2,time,col=col.alpha(3,0.2))
+lines(time, mu2 ,col=3)
+shade(CI3,time,col=col.alpha(4,0.2))
+lines(time, mu3 ,col=4)
+shade(CI4,time,col=col.alpha(5,0.2))
+lines(time, mu4 ,col=5)
+shade(CI5,time,col=col.alpha(6,0.2))
+lines(time, mu5 ,col=6)
+legend("topright",inset=c(-0.25,0),legend = c(paste("spline",1:5),"","median","95% CI"),col=c(2:6,"white",1,"#E0E0E0"),lwd=c(rep(2,5),1,1,10),xpd=T,bty="n")
+```
+
+
+
+```{r, echo=F, fig.cap = "Figure x. Sum of all splines"}
+
+ssum<-sapply(1:ns,function(i){post$w1[i]*Bt[,1]+post$w2[i]*Bt[,2]+post$w3[i]*Bt[,3]+post$w4[i]*Bt[,4]+post$w5[i]*Bt[,5]})
+muss<-apply(ssum,1,median)
+CIss<-apply(ssum,1,PI,prob=pr1)
+
+plot( time, Bt[,1],col=2,type="n",ylab="Spline sum",xlab="Time (years)",xaxt="n",ylim=c(-2,3))
+axis(1,at=0:5*12,labels = 0:5)
+shade(CIss,time,col=col.alpha(1,0.2))
+lines(time, muss ,col=1)
+```
+
+
+On exponential scale this function defines relative death probability for each month in the sudied period.
+
+```{r, echo=F, fig.cap = "Figure x. Relative hazard ratio duringfirst five years of life",fig.width=8,fig.height=4}
+essum<-sapply(1:ns,function(i){exp(post$w1[i]*Bt[,1]+post$w2[i]*Bt[,2]+post$w3[i]*Bt[,3]+post$w4[i]*Bt[,4]+post$w5[i]*Bt[,5])})
+emuss<-apply(essum,1,median)
+eCIss<-apply(essum,1,PI,prob=pr1)
+
+plot( time, Bt[,1],col=2,type="n",ylab="Relative hazard = exp(Spline sum)",xlab="Time (years)",xaxt="n",ylim=c(0,10))
+axis(1,at=0:5*12,labels = 0:5)
+shade(eCIss,time,col=col.alpha(1,0.2))
+lines(time, emuss ,col=1)
+```
+
+This curve defining relative risk of death at any given month is used to estimate the basline death probability for children in each SES category using the by-SES intercepts.
+
+```{r, echo=F, fig.cap = "Figure x. Probability of death per month per SES",fig.width=8,fig.height=4}
+#farmers
+pf<-sapply(1:ns,function(i){exp(post$pda[i,1]+post$w1[i]*Bt[,1]+post$w2[i]*Bt[,2]+post$w3[i]*Bt[,3]+post$w4[i]*Bt[,4]+post$w5[i]*Bt[,5]+post$bma[i]*cfMA+post$bR[i]*cfBR)})
+#cottagers
+pc<-sapply(1:ns,function(i){exp(post$pda[i,2]+post$w1[i]*Bt[,1]+post$w2[i]*Bt[,2]+post$w3[i]*Bt[,3]+post$w4[i]*Bt[,4]+post$w5[i]*Bt[,5]+post$bma[i]*cfMA+post$bR[i]*cfBR)})
+#houseless lodgers
+pl<-sapply(1:ns,function(i){exp(post$pda[i,3]+post$w1[i]*Bt[,1]+post$w2[i]*Bt[,2]+post$w3[i]*Bt[,3]+post$w4[i]*Bt[,4]+post$w5[i]*Bt[,5]+post$bma[i]*cfMA+post$bR[i]*cfBR)})
+
+pf<-t(pf)
+pc<-t(pc)
+pl<-t(pl)
+
+#Summary
+pfmu<-apply(pf,2,mean)
+pfCI<-apply(pf,2,PI)
+
+pcmu<-apply(pc,2,mean)
+pcCI<-apply(pc,2,PI)
+
+plmu<-apply(pl,2,mean)
+plCI<-apply(pl,2,PI)
+
+
+#From these baseline death rates, we can easily calculate expected survival curves fo each SES category.
+#Surv. curve
+survf<-sapply(1:nrow(pf),function(i){sapply(time,function(x){prod((1-pf[i,])[1:x])})})
+survc<-sapply(1:nrow(pc),function(i){sapply(time,function(x){prod((1-pc[i,])[1:x])})})
+survl<-sapply(1:nrow(pl),function(i){sapply(time,function(x){prod((1-pl[i,])[1:x])})})
+
+#Summary
+survfmu<-apply(survf,1,mean)
+survfCI<-apply(survf,1,PI)
+
+survcmu<-apply(survc,1,mean)
+survcCI<-apply(survc,1,PI)
+
+survlmu<-apply(survl,1,mean)
+survlCI<-apply(survl,1,PI)
+
+sescol<-c("#FF0000","#00CD00","#0000FF")
+sescol2<-sapply(sescol,col.alpha,0.2)
+
+
+#tiff("002_new_beginning.tif",width=21,height=7,res=600,units="cm",compression="lzw")
+#par(mfrow=c(1,3),mar=c(3,3,1,1),mgp=c(1.8,0.5,0))
+
+
+layout(matrix(c(1:3),nrow=1),widths = c(1.18,1,1))
+par(mar=c(3.5,3.5,2,1),mgp=c(2,0.7,0))
+
+plot(1:60,pfmu,ylim=c(0,0.10),type="n",xlab="Year",ylab="Death rate per month",xaxt="n")
+axis(1,at=0:5*12,labels = 0:5)
+shade(pfCI,1:60,col = sescol2[1])
+lines(1:60,pfmu,col=sescol[1])
+title("Farmers",adj=0,col.main=2)
+
+par(mar=c(3.5,0.5,2,1),mgp=c(2,0.7,0))
+plot(1:60,pfmu,ylim=c(0,0.10),type="n",xlab="Year",ylab="",xaxt="n",yaxt="n")
+axis(1,at=0:5*12,labels = 0:5)
+shade(pcCI,1:60,col = sescol2[2])
+lines(1:60,pcmu,col=sescol[2])
+title("Cottagers",adj=0,col.main=3)
+
+par(mar=c(3.5,0.5,2,1),mgp=c(2,0.7,0))
+plot(1:60,pfmu,ylim=c(0,0.10),type="n",xlab="Year",ylab="",xaxt="n",yaxt="n")
+axis(1,at=0:5*12,labels = 0:5)
+shade(plCI,1:60,col = sescol2[3])
+lines(1:60,plmu,col=sescol[3])
+title("Lodgers",adj=0,col.main=4)
+```
+
+
+The pairwise hazards ratios calculated from the sampled posteriors of per-SES intercepts revealed no substantial differences in baseline survival probabilities between childrem from different SES strata.
+
+```{r, echo=F}
+
+#Intercept death rate on log scale
+apply(post$pda,2,median)
+exp(apply(post$pda,2,median))
+
+#The survival in all three SES categories was almost identical (see table X).
+sesC<-cbind(
+  post$pda[,1]-post$pda[,2],
+  post$pda[,3]-post$pda[,2],
+  post$pda[,3]-post$pda[,1])
+
+mu<-exp(apply(sesC,2,median))
+PI<-exp(apply(sesC,2,PI))
+
+PI<-apply(format(round(PI,2),nsmall=2),2,function(x)paste(x,collapse=" - "))
+
+tabSES<-cbind(format(round(mu,2),nsmall=2),PI)
+rownames(tabSES)<-c("Farmers/cottagers","Lodgers/cottagers","Lodgers/farmers")
+colnames(tabSES)<-c("HR","CI")
+
+tabSES
+```
+
+
+```{r, echo=F, fig.cap = "Figure x. Estimated servival probabilities as a fucntion of time and SES",fig.width=8,fig.height=4}
+
+#tiff("002_new_beginning.tif",width=21,height=7,res=600,units="cm",compression="lzw")
+#par(mfrow=c(1,3),mar=c(3,3,1,1),mgp=c(1.8,0.5,0))
+
+layout(matrix(c(1:3),nrow=1),widths = c(1.18,1,1))
+par(mar=c(3.5,3.5,2,1),mgp=c(2,0.7,0))
+
+plot(1:60,survfmu,ylim=c(0,1),type="n",xlab="Year",ylab="Survival probability",xaxt="n")
+axis(1,at=0:5*12,labels = 0:5)
+shade(cbind(c(1,1),survfCI),0:60,col = sescol2[1])
+lines(0:60,c(1,survfmu),col = sescol[1])
+title("Farmers",adj=0,col.main=2)
+
+par(mar=c(3.5,0.5,2,1),mgp=c(2,0.7,0))
+plot(1:60,survfmu,ylim=c(0,1),type="n",xlab="Year",ylab="",xaxt="n",yaxt="n")
+axis(1,at=0:5*12,labels = 0:5)
+shade(cbind(c(1,1),survcCI),0:60,col = sescol2[2])
+lines(0:60,c(1,survcmu),col = sescol[2])
+title("Cottagers",adj=0,col.main=3)
+
+par(mar=c(3.5,0.5,2,1),mgp=c(2,0.7,0))
+plot(1:60,survfmu,ylim=c(0,1),type="n",xlab="Year",ylab="",xaxt="n",yaxt="n")
+axis(1,at=0:5*12,labels = 0:5)
+shade(cbind(c(1,1),survlCI),0:60,col = sescol2[3])
+lines(0:60,c(1,survlmu),col = sescol[3])
+title("Lodgers",adj=0,col.main=4)
+```
+
+
+These survival curves are further modified by a set of 12 parameters for each year that captured the interaction between SES category and grandmother presence. These parameters indicated relative increase/decrease of death rates towards the per-SES baseline. Equivalent parameters were allowed to correlate (as random effects in a varying effect model) between the five years of interest. It was possible to generate parametric equivalents of Kaplan-Meier plots using these parameters (See Figure X).
+
+```{r, echo=F, fig.cap = "Figure x. Estimated servival probabilities as a fucntion of time, SES and interaction between SES and grandmother availibility",fig.width=8,fig.height=4}
+
+drawSurv<-function(cond,new=F,s=T,ylim=NULL){
+  
+  if(is.null(ylim)){
+    if(s==T){
+      ylim<-c(0,1)
+    }else{
+      ylim<-c(0,0.08)
+    }
+  }
+  
+  cSES<-ceiling((cond/4))
+  cGR<-ifelse(cond%%4==0,4,cond%%4)
+  
+  p<-sapply(1:ns,function(i){exp(post$pda[i,cSES]+rep(post$alpha[i,cond,],each=12)+post$w1[i]*Bt[,1]+post$w2[i]*Bt[,2]+post$w3[i]*Bt[,3]+post$w4[i]*Bt[,4]+post$w5[i]*Bt[,5]+post$bma[i]*cfMA+post$bR[i]*cfBR)})
+  
+  p<-t(p)
+  
+  #Summary
+  pmu<-apply(p,2,mean)
+  pCI<-apply(p,2,PI)
+  
+  surv<-sapply(1:nrow(p),function(i){sapply(time,function(x){prod((1-p[i,])[1:x])})})
+  
+  survmu<-apply(surv,1,mean)
+  survCI<-apply(surv,1,PI)
+  
+  if(s==F){
+    if(new==T){
+      plot(1:60,pmu,ylim=ylim,type="n",xlab="Year",ylab="Death rate per month",xaxt="n",xlim=c(0,60))
+      axis(1,at=0:5*12,labels = 0:5)    
+    }
+    
+    shade(pCI,1:60,col = cols2[cGR])
+    lines(1:60,pmu,col=cols[cGR])
+  }else{
+    if(new==T){
+      plot(1:60,survmu,ylim=ylim,type="n",xlab="Year",ylab="Survival probability",xaxt="n",xaxs="i",xlim=c(0,60))
+      axis(1,at=0:5*12,labels = 0:5)
+    }
+    
+    shade(cbind(c(1,1),survCI),0:60,col = cols2[cGR])
+    lines(0:60,c(1,survmu),col = cols[cGR])
+  }
+}
+
+#Define the per-category colours
+cols<-c(none.col="#000000",mo.col="#DD6666",po.col="#6666DD",both.col="#66BB00")
+cols2<-paste(cols,"20",sep="")
+
+layout(matrix(c(1:3),nrow=1),widths = c(1.2,1.0,1.8))
+
+ylim<-c(0,1)
+par(mar=c(3.5,3.5,2,0.5),mgp=c(2,0.7,0))
+plot(1:60,1:60,ylim=ylim,type="n",xlab="Year",ylab="Survival probability",xaxt="n",xlim=c(0,60))
+axis(1,at=0:5*12,labels = 0:5)
+title("Farmers",adj=0,col.main=2)
+drawSurv(1,s=T)
+drawSurv(2,s=T)
+drawSurv(3,s=T)
+drawSurv(4,s=T)
+
+par(mar=c(3.5,0.5,2,0.5),mgp=c(2,0.7,0))
+plot(1:60,1:60,ylim=ylim,type="n",xlab="Year",ylab="",xaxt="n",yaxt="n",xlim=c(0,60))
+axis(1,at=0:5*12,labels = 0:5)
+title("Cottagers",adj=0,col.main=3)
+drawSurv(5,s=T)
+drawSurv(6,s=T)
+drawSurv(7,s=T)
+drawSurv(8,s=T)
+
+par(mar=c(3.5,0.5,2,11),mgp=c(2,0.7,0))
+plot(1:60,1:60,ylim=ylim,type="n",xlab="Year",ylab="",xaxt="n",yaxt="n",xlim=c(0,60))
+axis(1,at=0:5*12,labels = 0:5)
+title("Lodgers",adj=0,col.main=4)
+drawSurv(9,s=T)
+drawSurv(10,s=T)
+drawSurv(11,s=T)
+drawSurv(12,s=T)
+
+legend("topright",inset = c(-0.8,0),c("Both GM present","Paternal GM present","Maternal GM present","Both GM absent","95% CI"),col=c(cols,"#EEEEEE"),lwd=c(2,2,2,2,18),lty=c(1,1,1,1,1),bty="n",xpd=T)
+
+```
+
+
+Atlhough these parameters were estimated as increments on a logarithmic scale (Supplementary figure xx), we report them after exponentiation as Hazards ratios relative to by-SES baseline, which is customary in standard Cox regression. 
+
+```{r, echo=F, fig.cap = "Figure x. Estimated servival probabilities as a fucntion of time, SES and interaction between SES and grandmother availibility",fig.width=8,fig.height=4}
+#dev.off()
+
+pr<-0.95
+a<-post$alpha
+
+c.ci<-rep(cols,each=5,times=3)
+
+#In regression terms
+plot(NULL,xlim=c(0,60),ylim=c(-1,1))
+counter<-1
+for(cond in 1:12){
+  for(year in 1:5){
+    samp<-a[,cond,year]
+    xc<-(cond-1)*5+year*0.5
+    lines(rep(xc,2),PI(samp,prob=pr),lwd=2,col=c.ci[counter])
+    points(xc,median(samp),pch=21,bg="white",col=c.ci[counter])
+    counter<-counter+1
+  }
+}
+abline(h=0,lty=2,col="grey")
+
+```
+
+
+We depict 3 compatibility levels in the following figure. Full-color error bars indicate a 90%, semi-transparent bars indicate 95% Compatibility intervals. Dots indicate comfidence levels corresponding to Bonferroni correcion (1-0.05/60, since there are 60 parameters in total). If both dots are on the same side of the baseline=1, given estimate is expecetd to pass any reasonable statistical test within the frequentist approach. Note, however, that we used Bayesian methods that include sampling variation. The whole posterior parameter distribution should be treated as a parameter estimate, not only median, or upper/lower bound based on cut-off interpretation criteria.
+Prior probability of correlation matrix between estimates for specific years was defined using Cholesky LKJ correlation distribution with eta=1, that means a flat correlation matrix distribution was used allowing for any combination of correlations between studied years.
+
+```{r, echo=F, fig.cap = "Figure x. Hazards ratios relative to the baseline survival function as a interaction betwenn SES and grandmother availibility", fig.width=8,fig.height=5}
+
+sesbg<-sapply(sescol,col.alpha,0.1)
+a<-post$alpha
+
+pr1<-0.90
+pr2<-0.95
+pr3<-1-(0.05/60)
+
+sescol<-c("#FF0000","#00CD00","#0000FF")
+sescol2<-sapply(sescol,col.alpha,0.2)
+sesbg<-sapply(sescol,col.alpha,0.1)
+
+
+par(mar=c(3,3,2,6),mgp=c(1.8,0.7,0))
+plot(NULL,xlim=c(-1.5,52.5),ylim=c(0.25,3),ylab="Hazard ratio relative to given year",xaxs="i",xaxt="n",xlab="SES")
+
+legend("topright", inset=c(-0.18,0),legend=c("None","Paternal","Maternal","Both"),title="\nAvailabe\ngrandmothers",xpd=T,bty="n",col=cols,pch=16)
+
+rect(-1.5,-100,16.5,100,col=sesbg[1],border=NA)
+rect(16.5,-100,34.5,100,col=sesbg[2],border=NA)
+rect(34.5,-100,52.5,100,col=sesbg[3],border=NA)
+mtext("Farmers",1,col=2,font=2,at=7.5,line=0.5)
+mtext("Cottagers",1,col=3,font=2,at=25.5,line=0.5)
+mtext("Lodgers",1,col=4,font=2,at=43.5,line=0.5)
+counter<-1
+for(cond in 1:12){
+  for(year in 1:5){
+    samp<-exp(a[,cond,year])
+    xc<-(cond-1)*4+year*0.5+(ceiling((cond/4))-1)*2
+    lines(rep(xc,2),PI(samp,prob=pr2),lwd=2,col=paste(c.ci[counter],"50",sep=""))
+    lines(rep(xc,2),PI(samp,prob=pr1),lwd=2,col=c.ci[counter])
+    points(rep(xc,2),PI(samp,prob=pr3),pch=16,cex=0.1,col=paste(c.ci[counter],"50",sep=""))
+    
+    points(xc,median(samp),pch=21,bg="white",col=c.ci[counter],lwd=1.2)
+    counter<-counter+1
+  }
+}
+abline(h=1,lty=2,col="#808080")
+
+```
+
+```{r, echo=F}
+#Correlation of parameter estimates between years
+Rho<-post$Rho_cond
+rm<-apply(Rho,c(2,3),median)
+rl<-apply(Rho,c(2,3),function(x){PI(x,prob=0.95)[1]})
+ru<-apply(Rho,c(2,3),function(x){PI(x,prob=0.95)[2]})
+
+rm<-format(round(rm,2),nsmall=2)
+rpi<-paste(format(round(rl,2),nsmall=2),format(round(ru,2),nsmall=2),sep=" - ")
+
+cm<-matrix(paste(rm," (",rpi,")",sep=""),ncol=ncol(rm))
+diag(cm)<-c("0-1","1-2","2-3","3-4","4-5")
+```
+
+Highest correlation between parameter estimates was obtained between the firts and the second year of age 
+```{r}
+rm[1,2]
+```
+
+Posterior distribution of correlation matrices between raw parameter estimates in different years (on the diagonal) of the studied period. 95% compatibility intervals are in parentheses. The full correlation matrix can be found in supplement x.
+```{r}
+cm
+```
+
+It is possible to express sets of these interaction parameters as contrasts of interest. For each combination of SES category and age, we computed three idependent contrasts from posterior samples. All calculations were done on logarithic scale, but are reported after exonentiatoion as Hazards Ratios. Following procedure was executed for each sample from the joint posterior distribution separately: Firstly, contrast between maternal and paternal grandmother was calculated, secodndly from their mean and parameter estimate in the group, where both GM were available, the contrast between the effect of one and two grandmothers was calculated, and finally from the cencer of this contrast and the remaining category, contrast between any grandmaternal care and grandmother absence was calculated (See the illustration of this process in Supplementary material X).
+
+```{r , echo=FALSE, fig.cap="Figure x. Illustration of a contrast calculation from four sampled contrasts relative to the baseline", out.width = '100%',fig.width=8,fig.height=4}
+knitr::include_graphics("Extraction of contrast sample.png")
+```
+
+To extract mean parameter estimates for each year or for the overall population regardles of social status, sampled parameter estimates were averaged either over the whole time period or across SES. Yielded posterior distributions of mean estimates and contrasts were processed in the same way as samples within each SES category. The results for the whole period includng compatibility intervals are summarized in table x, Hazards ratios for each year are in table x, graphical representation of the estimated distributions marked by median estimate, and two compatibility levels are in Figure x.
+
+
+3 middle points and 3 contrasts are computed from 4 estimated differnces between baseline and per-SES subgroup
+
+```{r , echo=T}
+#Example
+
+r<-a[1,9:12,2]
+
+m3<-mean(r[2:3])
+m2<-mean(c(m3,r[4]))
+m1<-mean(c(m2,r[1]))
+
+c1<-r[1]-m2
+c2<-m3-r[4]
+c3<-r[3]-r[2]
+
+rlist<-list(c1=c1,c2=c2,c3=c3,m1=m1,m2=m2,m3=m3)
+
+nc<-as.data.frame(t(sapply(rlist,exp)))
+nc
+
+exp(r)
+
+#Get back the intercepts for subgroups
+#None
+nc$m1*sqrt(nc$c1)
+#Maternal
+((nc$m1/sqrt(nc$c1))*sqrt(nc$c2))/sqrt(nc$c3)
+#Paternal
+((nc$m1/sqrt(nc$c1))*sqrt(nc$c2))*sqrt(nc$c3)
+#Both
+((nc$m1/sqrt(nc$c1))/sqrt(nc$c2))
+```
+
+
+Define a few functions that allow to do this for the full sampled posterior.
+```{r , echo=T}
+a<-post$alpha
+
+#Reparametrize the intercepts into 3 contrasts and 3 middle points
+repar<-function(r){
+  m3<-mean(r[2:3])
+  m2<-mean(c(m3,r[4]))
+  m1<-mean(c(m2,r[1]))
+  
+  c1<-r[1]-m2
+  c2<-m3-r[4]
+  c3<-r[3]-r[2]
+  
+  return(c(c1=c1,c2=c2,c3=c3,m1=m1,m2=m2,m3=m3))
+}
+
+#Function that reprarametrizes the intercepts and transfers the contrasts and middle points to hazards ratios
+matHR<-function(a,fl,year){
+  res<-sapply(1:3,function(i){repar(a[fl,c(((i-1)*4+1):(i*4)),year])})
+  return(res)
+}
+
+#Extract all estmates simultaneously mean over years of interest
+rsy<-lapply(1:5,function(y){sapply(1:(dim(a)[1]),function(fl){matHR(a,fl,y)})})
+rsy2<-array(unlist(rsy),dim = c(18,dim(a)[1],5))
+#Dimension in order: Parameter, sample, year 
+
+#Ceck if it fits
+rsy[[5]][1,561]
+rsy2[1,561,5]
+
+dim(rsy2)
+
+#Reparametrize each set of sampled estimates
+rs1<-sapply(1:(dim(a)[1]),function(fl){matHR(a,fl,1)})
+rs2<-sapply(1:(dim(a)[1]),function(fl){matHR(a,fl,2)})
+rs3<-sapply(1:(dim(a)[1]),function(fl){matHR(a,fl,3)})
+rs4<-sapply(1:(dim(a)[1]),function(fl){matHR(a,fl,4)})
+rs5<-sapply(1:(dim(a)[1]),function(fl){matHR(a,fl,5)})
+
+#Estimates averaged over the years for each sample.
+rsavg<-apply(rsy2,c(1,2),mean)
+```
+
+
+Summarize the contrast hazards ratios 
+
+```{r, echo=F, fig.cap = "Figure x. Hazards ration per posterior contrasts", fig.width=8,fig.height=4}
+givetab<-function(rs){
+  
+  #Mean over SES categories
+  mus<-sapply(1:(dim(a)[1]),function(i){c(mean(rs[c(1,7,13),i]),mean(rs[c(1,7,13)+1,i]),mean(rs[c(1,7,13)+2,i]))})
+  
+  Tmu<-exp(matrix(apply(mus,1,median),ncol=1))
+  TPIl<-exp(matrix(apply(mus,1,PI,prob=0.95)[1,],ncol=1))
+  TPIu<-exp(matrix(apply(mus,1,PI,prob=0.95)[2,],ncol=1))
+  
+  TPI<-paste(format(round(TPIl,2),nsmall=2),"–",format(round(TPIu,2),nsmall=2))
+  TPI<-matrix(TPI,ncol=1)
+  
+  mu<-exp(matrix(apply(rs,1,median),ncol=3))
+  PIl<-exp(matrix(apply(rs,1,PI,prob=0.95)[1,],ncol=3))
+  PIu<-exp(matrix(apply(rs,1,PI,prob=0.95)[2,],ncol=3))
+  
+  PI<-paste(format(round(PIl,2),nsmall=2),"–",format(round(PIu,2),nsmall=2))
+  PI<-matrix(PI,ncol=3)
+  
+  tab1<-cbind(format(round(Tmu,2),nsmall=2),TPI,
+              cbind(format(round(mu[1:3,],2),nsmall=2),PI[1:3,])[,rep(c(0,3),times=3)+rep(1:3,each=2)])
+  rownames(tab1)<-c("None/any","One/two","Paternal/maternal")
+  colnames(tab1)<-c("Total HR","Total CI","Farmers HR","Farmers CI","Cottagers HR","Cottagers CI","Lodgers HR","Lodgers CI")
+  
+  tab2<-format(round(mu[1:3,],2),nsmall=2)
+  tab2<-matrix(c("",format(round(Tmu,2),nsmall=2),"",tab2[1:3],"",tab2[4:6],"",tab2[7:9]),ncol=1)
+  rownames(tab2)<-c("Total","None/any","One/two","Paternal/maternal","Farmers","None/any","One/two","Paternal/maternal","Cottagers","None/any","One/two","Paternal/maternal","Lodgers","None/any","One/two","Paternal/maternal")
+  colnames(tab2)<-c("HR")
+  
+  return(list(tab1=tab1,tab2=tab2))
+}
+
+```
+
+This table will be in the manuscript
+```{r}
+givetab(rsavg)$tab1
+```
+
+These tables can go to supplement or do not have be included, since the same information is contained in the plot below.
+
+```{r}
+givetab(rs1)$tab1
+givetab(rs2)$tab1
+givetab(rs3)$tab1
+givetab(rs4)$tab1
+givetab(rs5)$tab1
+```
+
+```{r, echo=F}
+tab2<-cbind(
+  givetab(rsavg)$tab2,
+  "",
+  givetab(rs1)$tab2,
+  givetab(rs2)$tab2,
+  givetab(rs3)$tab2,
+  givetab(rs4)$tab2,
+  givetab(rs5)$tab2)
+
+colnames(tab2)<-c("0-5","","0-1","1-2","2-3","3-4","4-5")
+```
+
+Table 2 with per-year hazards ratios
+```{r}
+tab2
+```
+
+Visualize the hazards ratios for each contrast
+
+```{r, echo=F, fig.cap="Figure x. Contrast hazards ratios", fig.width=8,fig.height=6}
+givedraw<-function(rs){
+  
+  #Mean over SES categories
+  mus<-sapply(1:(dim(a)[1]),function(i){c(mean(rs[c(1,7,13),i]),mean(rs[c(1,7,13)+1,i]),mean(rs[c(1,7,13)+2,i]))})
+  
+  pr1<-0.90
+  pr2<-0.95
+  pr3<-1-0.05/60
+  
+  Tmu<-exp(apply(mus,1,median))
+  TPI1<-exp(apply(mus,1,PI,prob=pr1))
+  TPI2<-exp(apply(mus,1,PI,prob=pr2))
+  TPI3<-exp(apply(mus,1,PI,prob=pr3))
+  
+  mu<-cbind(Tmu,exp(matrix(apply(rs,1,median),ncol=3))[1:3,])
+  
+  PI1l<-cbind(TPI1[1,],exp(matrix(apply(rs,1,PI,prob=pr1)[1,],ncol=3))[1:3,])
+  PI1u<-cbind(TPI1[2,],exp(matrix(apply(rs,1,PI,prob=pr1)[2,],ncol=3))[1:3,])
+  
+  PI2l<-cbind(TPI2[1,],exp(matrix(apply(rs,1,PI,prob=pr2)[1,],ncol=3))[1:3,])
+  PI2u<-cbind(TPI2[2,],exp(matrix(apply(rs,1,PI,prob=pr2)[2,],ncol=3))[1:3,])
+  
+  PI3l<-cbind(TPI3[1,],exp(matrix(apply(rs,1,PI,prob=pr3)[1,],ncol=3))[1:3,])
+  PI3u<-cbind(TPI3[2,],exp(matrix(apply(rs,1,PI,prob=pr3)[2,],ncol=3))[1:3,])
+  
+  return(list(mu=mu,PI1l=PI1l,PI1u=PI1u,PI2l=PI2l,PI2u=PI2u,PI3l=PI3l,PI3u=PI3u))
+}
+
+tod<-list(
+  givedraw(rsavg),
+  givedraw(rs1),
+  givedraw(rs2),
+  givedraw(rs3),
+  givedraw(rs4),
+  givedraw(rs5))
+
+#The pretty plot starts here
+sescol<-c("#000000","#FF0000","#00CD00","#0000FF")
+sescol2<-sapply(sescol,col.alpha,0.5)
+
+top<-2
+off<-0.5
+voff<-0.3
+hoff<-0.3
+
+bott<-c(2,1,0)*(top+voff)
+left<-c(0,seq(3.5,by=5*off+hoff,l=5))
+left
+
+par(mgp=c(2.5,0.7,-0.5),mar=c(2,4,3,1))
+
+
+plot(NULL,xlim=c(0,max(left)+4*off),ylim=c(0,max(bott)+top),xlab="",ylab="Hazards ratio (GM contrast)",axes=F,font.lab=2)
+
+for(b in bott){
+  axis(2,at=c(0,1,top)+b,labels = c(0,1,top),las=1,cex.axis=0.7)
+}
+
+for(b in bott){
+  for(l in left){
+    rect(l,0+b,5*off+l,b+top,border=NA,col="#EEEEEE")
+  }
+}
+
+for(y in 1:6){
+  for(con in 1:3){
+    for(ses in 1:4){
+      points(rep(left[y]+ses*off,2),c(ifelse(max(tod[[y]]$PI3l[con,ses],0)==0,NA,tod[[y]]$PI3l[con,ses]),ifelse(min(tod[[y]]$PI3u[con,ses],top)==top,NA,tod[[y]]$PI3u[con,ses]))+bott[con],col=sescol2[ses],pch=16,cex=0.2)
+      
+      lines(rep(left[y]+ses*off,2),c(max(tod[[y]]$PI2l[con,ses],0),min(tod[[y]]$PI2u[con,ses],top))+bott[con],col=sescol2[ses],lwd=2)
+      lines(rep(left[y]+ses*off,2),c(max(tod[[y]]$PI1l[con,ses],0),min(tod[[y]]$PI1u[con,ses],top))+bott[con],col=sescol[ses],lwd=2)
+      points(left[y]+ses*off,tod[[y]]$mu[con,ses]+bott[con],col=sescol[ses],pch=21,bg="white",lwd=1.2)
+      
+    }
+  }
+}
+
+abline(h=bott+1,col="#808080",lty=2)
+
+
+legend("bottom",inset=c(0,-0.1),legend=c("Mean estimate","Farmers","Cottager","Lodgers"),col=1:4,pch=16,xpd=T,ncol=4,text.col=1:4,text.font=1,bty="n")
+
+mtext(c("None/any","One/two","Paternal/maternal"),2,at=bott+1,line=0.8)
+mtext(c("Total","0-1","1-2","2-3","3-4","4-5"),3,at=left+2.5*off,line=-0.2,font=1)
+title("Age",cex.main=1)
+
+```
+
+
+Now we can summarize the other fixed effects:
+Other grandmother contrasts
+
+```{r, echo=F, fig.cap="Figure x. Hazards ratios of the additional contrast between grandmothers busy with their own children and grandmothers without children and unknown and positively deceased or remote grandmothers.", fig.width=6,fig.height=5}
+
+drawDist<-function(v,x,col,pr1=0.9,pr2=0.95){
+  lines(rep(x,2),PI(v,prob=c(pr2)),lwd=2,col=col.alpha(col,0.5))
+  lines(rep(x,2),PI(v,prob=c(pr1)),lwd=2,col=col)
+  points(x,median(v),pch=21,bg="white",col=col,lwd=1.5)
+}
+
+
+par(mar=c(3.5,3.5,2,2),mgp=c(2,0.7,0))
+plot(NULL,xlim=c(0.5,5),ylim=c(0,2),xaxt="n",ylab="Hazards ratio",xlab="",bty="n")
+
+x1<-c(1,3)
+off<-0.2
+
+
+drawDist(exp(post$bMbc),x=x1[1],cols[2])
+drawDist(exp(post$bPbc),x=x1[1]+off,cols[3])
+drawDist(exp(rowMeans(cbind(post$bMbc,post$bPbc))),x=x1[1]+2*off,"#000000")
+
+
+drawDist(exp(post$bMuc),x=x1[2],cols[2])
+drawDist(exp(post$bPuc),x=x1[2]+off,cols[3])
+drawDist(exp(rowMeans(cbind(post$bMuc,post$bPuc))),x=x1[2]+2.*off,"#000000")
+
+
+abline(h=1,lty=2,col="grey")
+abline(h=0,lty=1,col=1)
+
+
+text(x1+off,1.9,c("Within available","Within unavailable"),font=1)
+text(x1+off,1.7,c("busy / not-busy","unknown / known"),cex=0.9)
+
+legend("topright",legend = c("Maternal","Paternal","Mean"),col=cols[c(2:3,1)],pch=21,bg=0,bty="n")
+mtext("Additional grandmother contrast",at=mean(x1),font=2)
+
+```
+
+
+```{r, echo=F}
+
+tellDist<-function(v,pr=0.95,exp=T){
+  if(exp==T){
+    mu<-exp(median(v))
+    pi<-exp(PI(v,prob=pr))
+  }else{
+    mu<-median(v)
+    pi<-PI(v,prob=pr)
+  }
+  paste(format(round(mu,2),nsmall=2)," (95% CI = ",paste(format(round(pi,2),nsmall=2),collapse=" - "),")",sep="")
+}
+```
+
+
+
+
+There was a negligable difference between children whose availible grandmother had a child under 5 years of age of her own.
+The hazards ratio between busy and unoccupied grandmother was
+```{r}
+tellDist(post$bMbc)
+```
+for maternal
+```{r}
+tellDist(post$bPbc)
+```
+for paternal. The mean eastimate was 
+```{r}
+tellDist(rowMeans(cbind(post$bMbc,post$bPbc)))
+```
+
+There contranst between survival of children with grandmothers marked as unavailable, respective between unknown those with unknown and postively dead or remote grandmother was even lower (and due to higher number of data points used for this estimation also much more precise).
+The hazards ratio between unknown and surely unavailible grandmothers was
+```{r}
+tellDist(post$bMuc)
+```
+for maternal
+```{r}
+tellDist(post$bPuc)
+```
+for paternal. The mean eastimate was 
+```{r}
+tellDist(rowMeans(cbind(post$bMuc,post$bPuc)))
+```
+
+#The effect of birth order
+The effect of birth order of child survival was summarized by two regression parameters. Slope corresponding to survival increase or decrease with the logarithm of numerical birth rank
+```{r}
+tellDist(post$bR,exp=F)
+```
+
+and a special increment (or decrement) of survival chance in firstborns.
+```{r}
+tellDist(post$bFB,exp=F)
+```
+Both parameters were conclusively positive. The difference between the firstborns and other children was more prominent.
+
+Together they defined a survival function in Suppelementary figure X.
+
+```{r,echo=F,fig.cap="Figure SX. Relative probability of death as a function of birth rank (Median estimations of relative hazards ratios per birth rank ± 95% CI)",fig.width=6,fig.height=5}
+
+estHR<-function(rank){
+  post$bR*log(rank)+ifelse(rep(rank,ns)==1,post$bFB,rep(0,ns))
+}
+
+ranks<-1:18
+
+HRS<-sapply(ranks,estHR)
+
+mu<-apply(HRS,2,median)
+CI1<-apply(HRS,2,PI,prob=0.95)
+
+par(mar=c(3.5,3.5,2,1),mgp=c(2,0.7,0))
+plot(ranks,ylim=c(0,2),type="n",xlab="Birth rank",ylab="Hazards ratio (relative to baseline)")
+
+shade(exp(CI1),ranks)
+lines(ranks,exp(mu),lwd=1)
+points(ranks,exp(mu),pch=21,bg=0,col=1,lwd=1.5)
+```
+
+
+#Estimation of the effect of mothers age
+```{r,echo=F}
+data$mother.age[data$mother.age<0]<-NA
+```
+
+Mother's age was possitively correlated with birth rank. 
+
+```{r,include=T}
+cor.test(data$rank,data$mother.age,use="complete.obs")
+
+```
+
+Once we account for birth rank in the multiple regression, the age of the mother at childbirth plays a little role. The effect on log probability of survival (per month) is 
+
+```{r,include=T}
+tellDist(post$bma,exp=F)
+```
+
+Which corresponds to  
+```{r,include=T}
+tellDist(post$bma,exp=T)
+```
+Hazards ratio between two children whose mother's age is 1SD apart.
+
+The visualization of this relationship can be found in supplementary Figure xx.
+
+```{r,echo=F,fig.cap="Figure SX. Relative probability of death as a function of mothers age",fig.width=6,fig.height=5}
+meanMA<-mean(data$mother.age,na.rm=T)
+sdMA<-sd(data$mother.age,na.rm=T)
+
+descMA<-function(a){a*(sdMA)+meanMA}
+MA<-(data$mother.age-meanMA)/(sdMA)
+
+#It works
+#descMA(standardize(data$mother.age))
+
+x<-seq(-3,3,0.01)
+
+est<-sapply(x,function(x)(post$bma*x))
+mu<-apply(est,2,median)
+CI<-apply(est,2,PI,prob=0.95)
+
+plot(x,exp(mu),type="n",xlab="Mother age",ylab="Hazards ratio (relative to baseline)",ylim=c(0,2))
+shade(exp(CI),x)
+lines(x,exp(mu))
+
+#Distribution of mother ages
+dma<-density(MA[!is.na(MA)])
+polygon(dma$x,dma$y*0.8,col="#FF8080",border=NA)
+
+#Distribution of imputed values
+for(i in 1:dim(post$MA_impute)[2]){
+  dmai<-density(post$MA_impute[,i])
+  polygon(dmai$x,dmai$y*0.8,col="#8080F005",border=NA)
+}
+
+polygon(dma$x,dma$y*0.8,border="#FF0000")
+
+legend("topright",legend=c("Distribution of mother's ages", "Posterior distribution of imputed values"),pch=15,col=c("#FF8080","#8080FF"),bty="n")
+
+```
+
+
+#The effect of relatedness
+
+```{r,echo=F,fig.cap="Figure SX. Marginal posterior distributions of varying effects caputing the relatedness between children in the sample",fig.width=6,fig.height=5}
+prio<-rexp(length(post$sigma_M),rate=1)
+
+dp<-density(prio)
+dM<-density(post$sigma_M)
+dGMM<-density(post$sigma_GMM)
+dGMP<-density(post$sigma_GMP)
+
+den<-list(dp=dp,dM=dM,dGMM=dGMM,dGMP=dGMP)
+sms<-list(prio,post$sigma_M,post$sigma_GMM,post$sigma_GMP)
+
+sc<-0.1
+
+ys<-c(4,3,2,1)
+
+dcol<-c("#E0E0E0","#DDDD66","#DD6666","#6666DD")
+
+par(mar=c(3.5,8,3,2),mgp=c(2,0.7,0))
+plot(NULL,xlim=c(0,2),ylim=c(0.5,4.1),xlab="Standard deviation",ylab="",yaxt="n",xaxs="i")
+
+i<-1
+
+for(i in 1:4){
+  polygon(c(den[[i]]$x,rev(den[[i]]$x)),c(den[[i]]$y,rev(-den[[i]]$y))*sc+ys[i],col=dcol[i])
+  abline(h=ys[i],col="#808080")
+  lines(PI(sms[[i]],prob=pr),rep(ys[i],2),col=1,lwd=2)
+  points(median(sms[[i]]),ys[i],col=1,lwd=1.5,pch=21,bg=0)
+}
+
+axis(2,at=c(4:1),labels=c("Prior distribution","Common mother","Common GMM","Common GMP"),las=1)
+title("Effect of the relatedness between children",adj=0)
+box()
+
+```
+
+The effect of relatedness between the children was not very large, but not negligable. The median estimated standard deviation of varying effects due to shared mother was
+
+```{r}
+tellDist(post$sigma_M,exp=F)
+```
+
+That means that 68.2% (±1SD) sibling sets had Hazards ratios between
+```{r}
+round(exp(c(median(post$sigma_M)*c(-1,1))),2)
+```
+due to who their mother was, and 95.4% (±1SDs) fitted within  
+```{r}
+round(exp(c(median(post$sigma_M)*c(-2,2))),2)
+```
+hazards ratios.
+
+The effect of shared maternal grandmother seemed almost as important, although the posterior distribution stretched all to low values (see the visualization of posteriors of varying effects in Supplementary Figure S)
+```{r}
+tellDist(post$sigma_GMM,exp=F)
+```
+68.2% (±1SD) cousins with shared maternal grandmother were withih 
+```{r}
+round(exp(c(median(post$sigma_GMM)*c(-1,1))),2)
+```
+94.5 (±2SD) within
+```{r}
+round(exp(c(median(post$sigma_GMM)*c(-2,2))),2)
+```
+for median estimation of GMM varying effect.
+
+The relatedness through paternal grandmother showed the lowest contribution to survival prediction. The estimated standard deviation (on the log scale) between sets with the same paternal grandmother was
+```{r}
+tellDist(post$sigma_GMP,exp=F)
+```
+
+68.2% (±1SD) cousins with the same paternal grandmother fitted within
+```{r}
+round(exp(c(median(post$sigma_GMP)*c(-1,1))),2)
+```
+95.4% (±2SD) within 
+```{r}
+round(exp(c(median(post$sigma_GMP)*c(-2,2))),2)
+```
+Hazards ratios.
+
+
+Additional - extra verbalised estimation for the difference in Lodgers
+
+```{r}
+library(abind)
+
+cond<-9
+
+cSES<-ceiling((cond/4))
+
+cond<-9
+pNone<-sapply(1:ns,function(i){exp(post$pda[i,cSES]+rep(post$alpha[i,cond,],each=12)+post$w1[i]*Bt[,1]+post$w2[i]*Bt[,2]+post$w3[i]*Bt[,3]+post$w4[i]*Bt[,4]+post$w5[i]*Bt[,5]+post$bma[i]*cfMA+post$bR[i]*cfBR)})
+cond<-10
+pMo<-sapply(1:ns,function(i){exp(post$pda[i,cSES]+rep(post$alpha[i,cond,],each=12)+post$w1[i]*Bt[,1]+post$w2[i]*Bt[,2]+post$w3[i]*Bt[,3]+post$w4[i]*Bt[,4]+post$w5[i]*Bt[,5]+post$bma[i]*cfMA+post$bR[i]*cfBR)})
+cond<-11
+pPo<-sapply(1:ns,function(i){exp(post$pda[i,cSES]+rep(post$alpha[i,cond,],each=12)+post$w1[i]*Bt[,1]+post$w2[i]*Bt[,2]+post$w3[i]*Bt[,3]+post$w4[i]*Bt[,4]+post$w5[i]*Bt[,5]+post$bma[i]*cfMA+post$bR[i]*cfBR)})
+cond<-12
+pBoth<-sapply(1:ns,function(i){exp(post$pda[i,cSES]+rep(post$alpha[i,cond,],each=12)+post$w1[i]*Bt[,1]+post$w2[i]*Bt[,2]+post$w3[i]*Bt[,3]+post$w4[i]*Bt[,4]+post$w5[i]*Bt[,5]+post$bma[i]*cfMA+post$bR[i]*cfBR)})
+
+pNone<-t(pNone)
+pMo<-t(pMo)
+pPo<-t(pPo)
+pBoth<-t(pBoth)
+
+survNone<-sapply(1:nrow(pNone),function(i){sapply(time,function(x){prod((1-pNone[i,])[1:x])})})
+survMo<-sapply(1:nrow(pMo),function(i){sapply(time,function(x){prod((1-pMo[i,])[1:x])})})
+survPo<-sapply(1:nrow(pPo),function(i){sapply(time,function(x){prod((1-pPo[i,])[1:x])})})
+survBoth<-sapply(1:nrow(pBoth),function(i){sapply(time,function(x){prod((1-pBoth[i,])[1:x])})})
+
+str(survNone)
+
+low<-abind(survNone,survBoth,along=3)
+low2<-apply(low,c(1,2),function(x){exp(mean(log(x)))})
+
+top<-abind(survMo,survPo,along=3)
+top2<-apply(top,c(1,2),function(x){exp(mean(log(x)))})
+
+lowout<-low2[60,]
+topout<-top2[60,]
+
+tellDist(lowout,exp=F)
+tellDist(topout,exp=F)
+
+totHR<-(1-lowout)/(1-topout)
+
+tellDist(totHR,exp=F,pr=0.95)
+
+```
+
+
